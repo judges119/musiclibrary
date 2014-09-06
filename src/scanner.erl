@@ -3,15 +3,14 @@
 -compile(export_all).
 
 start(Entry) ->
-	spawn(?MODULE, collector, [[]]),
+	spawn(?MODULE, collector, []),
 	discover(Entry).
 
 collector() ->
 	register(collector, self()),
 	receive
-		{Entry, Hash} ->
-			[Hash|List],
-			io:format("~p~n", [Hash])
+		{_, Info, Hash} ->
+			io:format("~p~n", [Info])
 	end,
 	unregister(collector),
 	collector().
@@ -27,8 +26,20 @@ discover(Entry) ->
 
 exploredir(Directory) ->
 	{ok, Filenames} = file:list_dir(Directory),
-	[discover(Directory ++ "/" ++ X) || X <- Filenames].
+	[discover(Directory ++ '/' ++ X) || X <- Filenames].
 
 fileinfo(Entry) ->
-	
-	collector ! {Entry, os:cmd("md5hash " ++ Entry)}.
+	collector ! {Entry, get_tags(Entry), os:cmd("md5hash " ++ Entry)}.
+
+get_tags(Entry) ->
+	Song = os:cmd("id3v2 -l " ++ Entry ++ " | grep 'TT2 (Title/songname/content description)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//'"),
+	Artist = os:cmd("id3v2 -l " ++ Entry ++ " | grep 'TP1 (Lead performer(s)/Soloist(s))' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//'"),
+	Album = os:cmd("id3v2 -l " ++ Entry ++ " | grep 'TAL (Album/Movie/Show title)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//'"),
+	Genre = os:cmd("id3v2 -l " ++ Entry ++ " | grep 'TCO (Content type)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//'"),
+	Year = os:cmd("id3v2 -l " ++ Entry ++ " | grep 'TYE (Year)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//'"),
+	Composer = os:cmd("id3v2 -l " ++ Entry ++ " | grep 'TCM (Composer)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//'"),
+	TrackNumber = os:cmd("id3v2 -l " ++ Entry ++ "| grep 'TRK (Track number/Position in set)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | cut -d '/' -f 1"),
+	TrackCount = os:cmd("id3v2 -l " ++ Entry ++ "| grep 'TRK (Track number/Position in set)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | cut -d '/' -f 2"),
+	SetNumber = os:cmd("id3v2 -l " ++ Entry ++ "| grep 'TPA (Part of a set)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | cut -d '/' -f 1"),
+	SetCount = os:cmd("id3v2 -l " ++ Entry ++ "| grep 'TPA (Part of a set)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | cut -d '/' -f 2"),
+	{Song, Artist, Album, Genre, Year, Composer, {TrackNumber, TrackCount}, {SetNumber, SetCount}}.
