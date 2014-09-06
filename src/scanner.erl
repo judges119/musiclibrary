@@ -1,41 +1,35 @@
 -module(scanner).
 -include_lib("kernel/include/file.hrl").
--export([start/2, collector/1, fileinfo/1]).
+-export([start/2, discover/1, file_info/1]).
 
-start(Entry, DbLoc) ->
-	sqlite3:open(song_db, [{file, DbLoc}]),
-	TableInfo = [{id, integer, [{primary_key, [asc, autoincrement]}]}, {title, text}, {artist, text}, {album, text}, {genre, text}, {md5hash, text}, {location, text}],
-	ok = sqlite3:create_table(song_db, song, TableInfo),
-	spawn(?MODULE, collector, [song_db]),
-	discover(Entry).
-
-collector(song_db) ->
-	register(collector, self()),
-	receive
-		{Location, {Song, Artist, Album, Genre, Year, Composer, {TrackNumber, TrackCount}, {SetNumber, SetCount}}, MD5Hash} ->
-			sqlite3:write(song_db, song, [{title, Song}, {artist, Artist}, {album, Album}, {genre, Genre}, {md5hash, MD5Hash}, {location, Location}])
-	end,
-	io:format("SQLite: ~p~n", [sqlite3:read_all(song_db, song, [title])]),
-	unregister(collector),
-	collector(song_db).
+start(Entry, song_db) ->
+	spawn(?MODULE, discover, [Entry]).
 
 discover(Entry) ->
 	{ok, EntryRead} = file:read_file_info(Entry),
 	case EntryRead#file_info.type of
 		directory ->
-			exploredir(Entry);
+			explore_dir(Entry);
 		regular ->
-			spawn(?MODULE, fileinfo, [Entry])
+			case file_info(Entry) of
+				{Location, {Song, Artist, Album, Genre, Year, Composer, {TrackNumber, TrackCount}, {SetNumber, SetCount}}, MD5Hash} ->
+					%[_, {rows, [{Count}]}] = sqlite3:sql_exec(song_db, "SELECT count(*) FROM song WHERE location = '" ++ Location ++ "'"),
+					%if Count >= 1 ->
+							
+					sqlite3:write(song_db, song, [{title, Song}, {artist, Artist}, {album, Album}, {genre, Genre}, {md5hash, MD5Hash}, {location, Location}]);
+				_ ->
+					ok
+			end
 	end.
 
-exploredir(Directory) ->
+explore_dir(Directory) ->
 	{ok, Filenames} = file:list_dir(Directory),
-	[discover(Directory ++ "/" ++ X) || X <- Filenames].
+	[spawn(?MODULE, discover, [Directory ++ "/" ++ X]) || X <- Filenames].
 
-fileinfo(Entry) ->
+file_info(Entry) ->
 	case (string:str(Entry, ".DS_Store") == 0) and (string:str(Entry, "thumbs.db") == 0) of
 		true ->
-			collector ! {Entry, get_tags(Entry), os:cmd("md5hash " ++ Entry)};
+			{Entry, get_tags(Entry), os:cmd("md5hash " ++ Entry)};
 		false ->
 			ok
 	end.
