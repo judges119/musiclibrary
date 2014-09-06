@@ -4,7 +4,7 @@
 
 start(Entry, DbLoc) ->
 	sqlite3:open(song_db, [{file, DbLoc}]),
-	TableInfo = [{id, integer, [{primary_key, [asc, autoincrement]}]}, {title, text}, {artist, text}, {album, text}, {genre, text}, {md5hash, text}],
+	TableInfo = [{id, integer, [{primary_key, [asc, autoincrement]}]}, {title, text}, {artist, text}, {album, text}, {genre, text}, {md5hash, text}, {location, text}],
 	ok = sqlite3:create_table(song_db, song, TableInfo),
 	spawn(?MODULE, collector, [song_db]),
 	discover(Entry).
@@ -12,8 +12,8 @@ start(Entry, DbLoc) ->
 collector(song_db) ->
 	register(collector, self()),
 	receive
-		{_, {Song, Artist, Album, Genre, Year, Composer, {TrackNumber, TrackCount}, {SetNumber, SetCount}}, MD5Hash} ->
-			sqlite3:write(song_db, song, [{title, Song}, {artist, Artist}, {album, Album}, {genre, Genre}, {md5hash, MD5Hash}])
+		{Location, {Song, Artist, Album, Genre, Year, Composer, {TrackNumber, TrackCount}, {SetNumber, SetCount}}, MD5Hash} ->
+			sqlite3:write(song_db, song, [{title, Song}, {artist, Artist}, {album, Album}, {genre, Genre}, {md5hash, MD5Hash}, {location, Location}])
 	end,
 	io:format("SQLite: ~p~n", [sqlite3:read_all(song_db, song, [title])]),
 	unregister(collector),
@@ -46,14 +46,14 @@ fileinfo(Entry) ->
 %% Currently a lazy implementation, I should abstract the majority out for the DRY principle but that's for another day
 %%
 get_tags(Entry) ->
-	Song = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TT2 (Title/songname/content description)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//'"),
-	Artist = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TP1 (Lead performer(s)/Soloist(s))' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//'"),
-	Album = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TAL (Album/Movie/Show title)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//'"),
-	Genre = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TCO (Content type)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//'"),
-	Year = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TYE (Year)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//'"),
-	Composer = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TCM (Composer)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//'"),
-	TrackNumber = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TRK (Track number/Position in set)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | cut -d '/' -f 1"),
-	TrackCount = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TRK (Track number/Position in set)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | cut -d '/' -f 2"),
-	SetNumber = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TPA (Part of a set)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | cut -d '/' -f 1"),
-	SetCount = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TPA (Part of a set)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | cut -d '/' -f 2"),
+	Song = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TT2 (Title/songname/content description)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | tr -d '\n'" ),
+	Artist = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TP1 (Lead performer(s)/Soloist(s))' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | tr -d '\n'"),
+	Album = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TAL (Album/Movie/Show title)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | tr -d '\n'"),
+	Genre = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TCO (Content type)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | tr -d '\n'"),
+	Year = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TYE (Year)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | tr -d '\n'"),
+	Composer = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TCM (Composer)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | tr -d '\n'"),
+	TrackNumber = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TRK (Track number/Position in set)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | cut -d '/' -f 1 | tr -d '\n'"),
+	TrackCount = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TRK (Track number/Position in set)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | cut -d '/' -f 2 | tr -d '\n'"),
+	SetNumber = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TPA (Part of a set)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | cut -d '/' -f 1 | tr -d '\n'"),
+	SetCount = os:cmd("id3v2 -l '" ++ Entry ++ "' | grep 'TPA (Part of a set)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//' | cut -d '/' -f 2 | tr -d '\n'"),
 	{Song, Artist, Album, Genre, Year, Composer, {TrackNumber, TrackCount}, {SetNumber, SetCount}}.
