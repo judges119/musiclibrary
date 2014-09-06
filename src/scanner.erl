@@ -1,9 +1,9 @@
 -module(scanner).
 -include_lib("kernel/include/file.hrl").
--export([start/1, collector/1, fileinfo/1]).
+-export([start/2, collector/1, fileinfo/1]).
 
-start(Entry) ->
-	sqlite3:open(song_db, [in_memory]),
+start(Entry, DbLoc) ->
+	sqlite3:open(song_db, [{file, DbLoc}]),
 	TableInfo = [{id, integer, [{primary_key, [asc, autoincrement]}]}, {title, text}, {artist, text}, {album, text}, {genre, text}, {md5hash, text}],
 	ok = sqlite3:create_table(song_db, song, TableInfo),
 	spawn(?MODULE, collector, [song_db]),
