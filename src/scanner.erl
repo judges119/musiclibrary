@@ -1,30 +1,27 @@
 -module(scanner).
 -include_lib("kernel/include/file.hrl").
--export([start/2, discover/1, file_info/1]).
+-export([start/2, discover/2, file_info/1, removal/1]).
 
 start(Entry, song_db) ->
-	spawn(?MODULE, discover, [Entry]).
+	spawn(?MODULE, discover, [Entry, song_db]).
 
-discover(Entry) ->
+discover(Entry, DB) ->
 	{ok, EntryRead} = file:read_file_info(Entry),
 	case EntryRead#file_info.type of
 		directory ->
-			explore_dir(Entry);
+			explore_dir(Entry, DB);
 		regular ->
 			case file_info(Entry) of
 				{Location, {Song, Artist, Album, Genre, Year, Composer, {TrackNumber, TrackCount}, {SetNumber, SetCount}}, MD5Hash} ->
-					%[_, {rows, [{Count}]}] = sqlite3:sql_exec(song_db, "SELECT count(*) FROM song WHERE location = '" ++ Location ++ "'"),
-					%if Count >= 1 ->
-							
-					sqlite3:write(song_db, song, [{title, Song}, {artist, Artist}, {album, Album}, {genre, Genre}, {md5hash, MD5Hash}, {location, Location}]);
+					update_db(DB, {Location, {Song, Artist, Album, Genre, Year, Composer, {TrackNumber, TrackCount}, {SetNumber, SetCount}}, MD5Hash});
 				_ ->
 					ok
 			end
 	end.
 
-explore_dir(Directory) ->
+explore_dir(Directory, DB) ->
 	{ok, Filenames} = file:list_dir(Directory),
-	[spawn(?MODULE, discover, [Directory ++ "/" ++ X]) || X <- Filenames].
+	[spawn(?MODULE, discover, [Directory ++ "/" ++ X, DB]) || X <- Filenames].
 
 file_info(Entry) ->
 	case (string:str(Entry, ".DS_Store") == 0) and (string:str(Entry, "thumbs.db") == 0) of
@@ -32,6 +29,34 @@ file_info(Entry) ->
 			{Entry, get_tags(Entry), os:cmd("md5hash " ++ Entry)};
 		false ->
 			ok
+	end.
+
+removal(DB) ->
+	[_, {rows, List}] = sqlite3:sql_exec(DB, "SELECT location FROM song;"),
+	remove_old_entries(DB, List).
+
+remove_old_entries(_, []) ->
+	ok;
+remove_old_entries(DB, [{H} | T]) ->
+	%io:format("~p~n", [erlang:binary_to_list(H)]),
+	case filelib:is_file(erlang:binary_to_list(H)) of
+		false ->
+			sqlite3:sql_exec(DB, "DELETE FROM song WHERE location = '" ++ erlang:binary_to_list(H) ++ "';");
+		true ->
+			ok
+	end,
+	remove_old_entries(DB, T).	
+
+update_db(DB, {Location, {Song, Artist, Album, Genre, Year, Composer, {TrackNumber, TrackCount}, {SetNumber, SetCount}}, MD5Hash}) ->
+	[_, {rows, [{Count}]}] = sqlite3:sql_exec(DB, "SELECT COUNT(*) FROM song WHERE location = '" ++ Location ++ "';"),
+	if Count > 0 ->
+			[_, {rows, [{OldHash} | _]}] = sqlite3:sql_exec(DB, "SELECT md5hash FROM song WHERE location = '" ++ Location ++ "';"),
+			if OldHash /= MD5Hash ->
+					sqlite3:sql_exec(DB, "DELETE FROM song WHERE location = '" ++ Location ++ "';"),
+					sqlite3:write(song_db, song, [{title, Song}, {artist, Artist}, {album, Album}, {genre, Genre}, {md5hash, MD5Hash}, {location, Location}])
+			end;
+		Count =< 0 ->
+			sqlite3:write(song_db, song, [{title, Song}, {artist, Artist}, {album, Album}, {genre, Genre}, {md5hash, MD5Hash}, {location, Location}])
 	end.
 
 %%
