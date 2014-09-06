@@ -1,6 +1,6 @@
 -module(scanner).
 -include_lib("kernel/include/file.hrl").
--compile(export_all).
+-export([start/1, collector/0, fileinfo/1]).
 
 start(Entry) ->
 	spawn(?MODULE, collector, []),
@@ -9,7 +9,7 @@ start(Entry) ->
 collector() ->
 	register(collector, self()),
 	receive
-		{_, Info, Hash} ->
+		{_, Info, _} ->
 			io:format("~p~n", [Info])
 	end,
 	unregister(collector),
@@ -31,6 +31,11 @@ exploredir(Directory) ->
 fileinfo(Entry) ->
 	collector ! {Entry, get_tags(Entry), os:cmd("md5hash " ++ Entry)}.
 
+%%
+%% Gets ID3v2 tag information from a song
+%%
+%% Currently a lazy implementation, I should abstract the majority out for the DRY principle but that's for another day
+%%
 get_tags(Entry) ->
 	Song = os:cmd("id3v2 -l " ++ Entry ++ " | grep 'TT2 (Title/songname/content description)' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//'"),
 	Artist = os:cmd("id3v2 -l " ++ Entry ++ " | grep 'TP1 (Lead performer(s)/Soloist(s))' | cut -d ':' -f 2- | sed -e 's/^[ \t]*//'"),
